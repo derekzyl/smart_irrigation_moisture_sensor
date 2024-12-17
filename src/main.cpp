@@ -1,15 +1,26 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <LiquidCrystal_I2C.h>
+#include <Preferences.h>
+
+
+
+Preferences pref;
 
 // Pin Definitions
-#define MOISTURE_SENSOR_PIN 2
+#define MOISTURE_SENSOR_PIN 34
 #define RELAY_PIN 13
-#define BUZZER_PIN 34
+#define BUZZER_PIN 25
 
 #define MENU_BUTTON_PIN 32
 #define PLUS_BUTTON_PIN 33
 #define MINUS_BUTTON_PIN 35
+
+
+#define RW_MODE false
+#define RO_MODE true 
+
+char* thresh ="threshold";
 
 // WiFi Hotspot Configuration
 const char* ssid = "SmartIrrigation";
@@ -25,7 +36,6 @@ WebServer server(80);
 
 //define functions
 void setupServer();
-void handleMoisture(int moisturePercentage);
 void handleMenu(int moisturePercentage);
 void processIrrigation(int moisturePercentage);
 
@@ -187,6 +197,10 @@ void setup() {
   pinMode(PLUS_BUTTON_PIN, INPUT_PULLUP);
   pinMode(MINUS_BUTTON_PIN, INPUT_PULLUP);
 
+  // init pref
+
+  pref.begin("pref", false);
+
   // Initialize LCD
   lcd.init();
   lcd.backlight();
@@ -215,7 +229,7 @@ void setupServer (){
 
   server.on("/status", HTTP_GET, []() {
     currentMoisture = analogRead(MOISTURE_SENSOR_PIN);
-    int moisturePercentage = map(currentMoisture, 0, 4095, 0, 100);
+    int moisturePercentage =100- map(currentMoisture, 0, 4095, 0, 100);
     
     String status;
     if (systemMode) {
@@ -245,12 +259,15 @@ void setupServer (){
       String action = server.arg("action");
       if (action == "increase") {
         moistureThreshold = min(moistureThreshold + 1, 100);
+
       } else if (action == "decrease") {
         moistureThreshold = max(moistureThreshold - 1, 0);
       }
     } else if (server.hasArg("value")) {
       moistureThreshold = server.arg("value").toInt();
+
     }
+    pref.putInt('thres')
     server.send(200, "text/plain", "Threshold updated");
   });
 
@@ -298,14 +315,17 @@ void processIrrigation(int moisturePercentage) {
 
   // Control relay based on moisture and system mode
   if (!systemMode) {
+    lcd.setCursor(0, 0);
+    lcd.print("Status:");
     if (moisturePercentage < moistureThreshold) {
-      digitalWrite(RELAY_PIN, HIGH); // Turn on relay
+      digitalWrite(RELAY_PIN, HIGH); // Turn on 
+      
       lcd.setCursor(0, 1);
-      lcd.print("Status: Irrigating");
+      lcd.print("Irrigating");
     } else {
       digitalWrite(RELAY_PIN, LOW); // Turn off relay
       lcd.setCursor(0, 1);
-      lcd.print("Status: Idle");
+      lcd.print("Idle");
     }
   }
 
