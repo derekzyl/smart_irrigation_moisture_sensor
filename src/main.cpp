@@ -24,8 +24,12 @@ IPAddress subnet(255, 255, 255, 0);
 WebServer server(80);
 
 //define functions
-void handleMenu();
 void setupServer();
+void handleMoisture(int moisturePercentage);
+void handleMenu(int moisturePercentage);
+void processIrrigation(int moisturePercentage);
+
+
 
 // LCD Configuration
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -41,9 +45,14 @@ int lastMenuButtonState = HIGH;
 int lastPlusButtonState = HIGH;
 int lastMinusButtonState = HIGH;
 
-// Debounce Timing
+
+// Timing Variables
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 50;
+unsigned long lastMoistureCheckTime = 0;
+const unsigned long moistureCheckInterval = 1000;
+unsigned long lastThresholdAdjustTime = 0;
+const unsigned long thresholdAdjustInterval = 200;
 
 // HTML Page
 const char* htmlPage = R"rawliteral(
@@ -262,70 +271,90 @@ void loop() {
   // Handle web server requests
   server.handleClient();
 
-  // Read moisture
-  currentMoisture = analogRead(MOISTURE_SENSOR_PIN);
-  int moisturePercentage = map(currentMoisture, 0, 4095, 0, 100);
+  unsigned long currentTime = millis();
 
-  // Menu and manual mode button handling
-  handleMenu();
+  if (currentTime - lastMoistureCheckTime >= moistureCheckInterval) {
+    currentMoisture = analogRead(MOISTURE_SENSOR_PIN);
+    int moisturePercentage = map(currentMoisture, 0, 4095, 0, 100);
+    
+    // Handle menu first
+    handleMenu(moisturePercentage);
 
-  // Only control relay in manual mode if not in WiFi mode
+    // Only process moisture if not in menu mode
+    if (!menuActive) {
+      processIrrigation(moisturePercentage);
+    }
+
+    lastMoistureCheckTime = currentTime;
+  }
+}
+void processIrrigation(int moisturePercentage) {
+  // Update LCD with current status
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Moisture: ");
+  lcd.print(moisturePercentage);
+  lcd.print("%");
+
+  // Control relay based on moisture and system mode
   if (!systemMode) {
-    // Display current moisture and system status
-    lcd.setCursor(0, 0);
-    lcd.print("Moisture: ");
-    lcd.print(moisturePercentage);
-    lcd.print("%   ");
-
     if (moisturePercentage < moistureThreshold) {
       digitalWrite(RELAY_PIN, HIGH); // Turn on relay
       lcd.setCursor(0, 1);
-      lcd.print("Status: Irrigate ");
+      lcd.print("Status: Irrigating");
     } else {
       digitalWrite(RELAY_PIN, LOW); // Turn off relay
       lcd.setCursor(0, 1);
-      lcd.print("Status: Idle     ");
+      lcd.print("Status: Idle");
     }
-
-    // Critical moisture alert
-    digitalWrite(BUZZER_PIN, (moisturePercentage < 20) ? HIGH : LOW);
   }
 
-  delay(500);
+  // Critical moisture alert
+  if (moisturePercentage < 20) {
+    digitalWrite(BUZZER_PIN, HIGH);
+  } else {
+    digitalWrite(BUZZER_PIN, LOW);
+  }
 }
 
-void handleMenu() {
+void handleMenu(int moisturePercentage) {
   int menuButtonState = digitalRead(MENU_BUTTON_PIN);
   int plusButtonState = digitalRead(PLUS_BUTTON_PIN);
   int minusButtonState = digitalRead(MINUS_BUTTON_PIN);
+  unsigned long currentTime = millis();
 
-  // Check for menu button press
-  if (menuButtonState == LOW && lastMenuButtonState == HIGH && (millis() - lastDebounceTime) > debounceDelay) {
-    menuActive = !menuActive; // Toggle menu
+  // Check for menu button press with debounce
+  if (menuButtonState == LOW && lastMenuButtonState == HIGH && 
+      (currentTime - lastDebounceTime) > debounceDelay) {
+    menuActive = !menuActive;
     lcd.clear();
-    lastDebounceTime = millis();
+    lastDebounceTime = currentTime;
   }
   lastMenuButtonState = menuButtonState;
 
+  // Menu active - allow threshold adjustment
   if (menuActive) {
     lcd.setCursor(0, 0);
     lcd.print("Set Threshold:");
     lcd.setCursor(0, 1);
     lcd.print(moistureThreshold);
-    lcd.print("%   ");
+    lcd.print("%");
 
-    // Adjust threshold with buttons
-    if (plusButtonState == LOW && lastPlusButtonState == HIGH && (millis() - lastDebounceTime) > debounceDelay) {
+    // Non-blocking threshold adjustment
+    if (plusButtonState == LOW && 
+        (currentTime - lastThresholdAdjustTime) >= thresholdAdjustInterval) {
       moistureThreshold = min(moistureThreshold + 1, 100);
-      lastDebounceTime = millis();
-      delay(200); // Add a small delay to prevent rapid changes
+      lastThresholdAdjustTime = currentTime;
     }
-    if (minusButtonState == LOW && lastMinusButtonState == HIGH && (millis() - lastDebounceTime) > debounceDelay) {
+
+    if (minusButtonState == LOW && 
+        (currentTime - lastThresholdAdjustTime) >= thresholdAdjustInterval) {
       moistureThreshold = max(moistureThreshold - 1, 0);
-      lastDebounceTime = millis();
-      delay(200); // Add a small delay to prevent rapid changes
+      lastThresholdAdjustTime = currentTime;
     }
-    lastPlusButtonState = plusButtonState;
-    lastMinusButtonState = minusButtonState;
   }
+
+  // Update button states
+  lastPlusButtonState = plusButtonState;
+  lastMinusButtonState = minusButtonState;
 }
