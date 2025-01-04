@@ -20,7 +20,7 @@ Preferences pref;
 #define RW_MODE false
 #define RO_MODE true 
 
-char* thresh ="threshold";
+const char* thresh = "threshold";
 
 // WiFi Hotspot Configuration
 const char* ssid = "SmartIrrigation";
@@ -45,7 +45,7 @@ void processIrrigation(int moisturePercentage);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // Global Variables
-int moistureThreshold = 40;  // Default threshold
+int moistureThreshold =pref.isKey(thresh)?pref.getInt(thresh): 40;  // Default threshold
 int currentMoisture = 0;
 bool menuActive = false;
 bool systemMode = false;  // false = manual, true = WiFi
@@ -215,6 +215,8 @@ void setup() {
   Serial.println("Access Point Started");
   Serial.print("IP Address: ");
   Serial.println(WiFi.softAPIP());
+  digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(BUZZER_PIN, LOW);
 
   setupServer();
   Serial.println("HTTP server started");
@@ -267,7 +269,8 @@ void setupServer (){
       moistureThreshold = server.arg("value").toInt();
 
     }
-    pref.putInt('thres')
+    pref.putInt(thresh, moistureThreshold);
+    pref.end();
     server.send(200, "text/plain", "Threshold updated");
   });
 
@@ -282,6 +285,7 @@ void setupServer (){
 
   // Start Server
   server.begin();
+
 }
 
 void loop() {
@@ -292,7 +296,7 @@ void loop() {
 
   if (currentTime - lastMoistureCheckTime >= moistureCheckInterval) {
     currentMoisture = analogRead(MOISTURE_SENSOR_PIN);
-    int moisturePercentage = map(currentMoisture, 0, 4095, 0, 100);
+    int moisturePercentage =100- map(currentMoisture, 0, 4095, 0, 100);
     
     // Handle menu first
     handleMenu(moisturePercentage);
@@ -304,6 +308,7 @@ void loop() {
 
     lastMoistureCheckTime = currentTime;
   }
+  pref.end();
 }
 void processIrrigation(int moisturePercentage) {
   // Update LCD with current status
@@ -372,6 +377,8 @@ void handleMenu(int moisturePercentage) {
       moistureThreshold = max(moistureThreshold - 1, 0);
       lastThresholdAdjustTime = currentTime;
     }
+    pref.putInt(thresh, moistureThreshold);
+
   }
 
   // Update button states
