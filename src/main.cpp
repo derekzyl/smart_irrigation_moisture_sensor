@@ -9,7 +9,7 @@ Preferences pref;
 
 // Pin Definitions
 #define MOISTURE_SENSOR_PIN 34
-#define RELAY_PIN 13
+#define RELAY_PIN 14
 #define BUZZER_PIN 25
 
 #define MENU_BUTTON_PIN 32
